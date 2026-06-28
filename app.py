@@ -231,7 +231,56 @@ for label, desc, a, b in relative_items:
     })
 
 relative_df = pd.DataFrame(relative_table)
+# =========================================================
+# 음수 ETF 개수 추이 계산
+# =========================================================
 
+def negative_count_history(price_data, tickers, lookback_days):
+    result = []
+
+    available_tickers = [ticker for ticker in tickers if ticker in price_data.columns]
+
+    for i in range(lookback_days, len(price_data)):
+        current_date = price_data.index[i]
+        count_negative = 0
+        total_count = 0
+
+        for ticker in available_tickers:
+            series = price_data[ticker].dropna()
+
+            if current_date not in series.index:
+                continue
+
+            current_position = series.index.get_loc(current_date)
+
+            if current_position < lookback_days:
+                continue
+
+            current_price = series.iloc[current_position]
+            past_price = series.iloc[current_position - lookback_days]
+
+            if pd.isna(current_price) or pd.isna(past_price):
+                continue
+
+            return_value = (current_price / past_price - 1) * 100
+            total_count += 1
+
+            if return_value < 0:
+                count_negative += 1
+
+        result.append({
+            "Date": current_date,
+            "Negative Count": count_negative,
+            "Total Count": total_count,
+            "Negative Ratio": count_negative / total_count if total_count > 0 else np.nan
+        })
+
+    return pd.DataFrame(result)
+
+
+negative_1m_df = negative_count_history(prices, GLOBAL_ETFS, 21)
+negative_3m_df = negative_count_history(prices, GLOBAL_ETFS, 63)
+negative_6m_df = negative_count_history(prices, GLOBAL_ETFS, 126)
 
 fred_table = []
 
@@ -520,7 +569,47 @@ with tab2:
     )
 
     st.plotly_chart(fig, use_container_width=True)
+    st.markdown("### 음수 ETF 개수 추이")
 
+    fig_neg = go.Figure()
+
+    if len(negative_1m_df) > 0:
+        fig_neg.add_trace(go.Scatter(
+            x=negative_1m_df["Date"],
+            y=negative_1m_df["Negative Count"],
+            mode="lines",
+            name="1M 음수 ETF 개수"
+        ))
+
+    if len(negative_3m_df) > 0:
+        fig_neg.add_trace(go.Scatter(
+            x=negative_3m_df["Date"],
+            y=negative_3m_df["Negative Count"],
+            mode="lines",
+            name="3M 음수 ETF 개수"
+        ))
+
+    if len(negative_6m_df) > 0:
+        fig_neg.add_trace(go.Scatter(
+            x=negative_6m_df["Date"],
+            y=negative_6m_df["Negative Count"],
+            mode="lines",
+            name="6M 음수 ETF 개수"
+        ))
+
+    fig_neg.update_layout(
+        title="글로벌 주변부 ETF 음수 수익률 개수 추이",
+        xaxis_title="날짜",
+        yaxis_title="음수 ETF 개수",
+        height=400
+    )
+
+    st.plotly_chart(fig_neg, use_container_width=True)
+
+    st.info(
+        "이 차트에서 음수 ETF 개수가 2개 → 4개 → 6개 → 8개처럼 계단식으로 증가하면 "
+        "주변부 하락 확산 신호로 해석할 수 있습니다."
+    )
     st.markdown("### 상세 수익률")
     st.dataframe(returns_df, use_container_width=True)
 
