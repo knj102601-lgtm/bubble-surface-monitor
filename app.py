@@ -514,7 +514,222 @@ elif total_score >= 50:
     st.warning("고점 근접 신호가 일부 나타납니다. 주변부 하락 확산과 금리·신용 지표를 집중 점검하세요.")
 else:
     st.success("현재 종합 점수 기준으로는 과도한 고점 경고가 강하게 나타나지는 않습니다.")
+# =========================================================
+# 현재 시장 해석 자동 생성
+# =========================================================
 
+def get_latest_negative_count(df):
+    try:
+        if df is not None and len(df) > 0:
+            return int(df["Negative Count"].dropna().iloc[-1])
+    except Exception:
+        pass
+    return None
+
+
+current_1m_negative = get_latest_negative_count(negative_1m_df) if "negative_1m_df" in globals() else None
+current_3m_negative = get_latest_negative_count(negative_3m_df) if "negative_3m_df" in globals() else None
+current_6m_negative = get_latest_negative_count(negative_6m_df) if "negative_6m_df" in globals() else None
+
+
+def make_market_interpretation():
+    interpretation_points = []
+    caution_points = []
+    next_watch_points = []
+
+    # 1. 종합 점수 기준 해석
+    if total_score < 30:
+        headline = "정상 구간"
+        summary = "현재 종합 위험 점수 기준으로는 시장 고점 경고가 강하게 나타나지 않습니다."
+    elif total_score < 50:
+        headline = "과열 관찰 구간"
+        summary = "일부 쏠림과 과열 신호가 나타나고 있으나, 전면적인 위험 구간으로 보기는 어렵습니다."
+    elif total_score < 70:
+        headline = "고점 경계 구간"
+        summary = "시장 내부 균열과 주도주 쏠림이 함께 나타나고 있어 고점 근접 여부를 주의 깊게 볼 필요가 있습니다."
+    elif total_score < 85:
+        headline = "위험 구간"
+        summary = "여러 위험 신호가 동시에 나타나고 있어 현금비중, 레버리지, 주도주 집중도를 점검할 필요가 있습니다."
+    else:
+        headline = "붕괴 가능성 경계 구간"
+        summary = "시장 내부 균열, 금리 압박, 신용 스트레스가 동시에 강하게 나타나는 고위험 구간입니다."
+
+    # 2. 반도체·AI 쏠림 해석
+    if not pd.isna(soxx_spy_3m) and soxx_spy_3m >= 30:
+        interpretation_points.append(
+            f"반도체가 S&P500 대비 3개월 기준 {soxx_spy_3m:.1f}% 강해 AI·반도체 쏠림이 매우 강합니다."
+        )
+        next_watch_points.append("SOXX/SPY 상대강도가 둔화되거나 하락 전환하는지 확인")
+
+    elif not pd.isna(soxx_spy_3m) and soxx_spy_3m >= 10:
+        interpretation_points.append(
+            f"반도체가 S&P500 대비 3개월 기준 {soxx_spy_3m:.1f}% 강해 주도 섹터 역할을 하고 있습니다."
+        )
+
+    # 3. 나스닥 쏠림 해석
+    if not pd.isna(qqq_spy_3m) and qqq_spy_3m > 5:
+        interpretation_points.append(
+            f"나스닥100이 S&P500 대비 3개월 기준 {qqq_spy_3m:.1f}% 강해 대형 기술주 선호가 유지되고 있습니다."
+        )
+
+    if not pd.isna(qqq_spy_3m) and qqq_spy_3m > 5 and not pd.isna(rsp_spy_3m) and rsp_spy_3m < 0:
+        caution_points.append(
+            "나스닥100은 강하지만 동일가중 S&P500은 약해 일부 대형주 중심의 쏠림 장세가 나타납니다."
+        )
+
+    # 4. 시장 폭 해석
+    if not pd.isna(rsp_spy_3m) and rsp_spy_3m < -2:
+        caution_points.append(
+            f"RSP/SPY가 3개월 기준 {rsp_spy_3m:.1f}%로 약해 시장 폭 축소 신호가 있습니다."
+        )
+        next_watch_points.append("RSP/SPY가 추가로 약해지는지 확인")
+
+    if not pd.isna(iwm_spy_3m) and iwm_spy_3m > 0:
+        interpretation_points.append(
+            f"IWM/SPY가 3개월 기준 {iwm_spy_3m:.1f}%로 플러스라 중소형주가 완전히 소외된 상태는 아닙니다."
+        )
+    elif not pd.isna(iwm_spy_3m) and iwm_spy_3m < -5:
+        caution_points.append(
+            f"IWM/SPY가 3개월 기준 {iwm_spy_3m:.1f}%로 약해 중소형주 소외가 나타납니다."
+        )
+
+    # 5. 주변부 ETF 음수 개수 해석
+    if current_1m_negative is not None and current_3m_negative is not None and current_6m_negative is not None:
+        interpretation_points.append(
+            f"현재 음수 ETF 개수는 1M {current_1m_negative}개, 3M {current_3m_negative}개, 6M {current_6m_negative}개입니다."
+        )
+
+        if current_1m_negative >= 5 and current_3m_negative < 5:
+            caution_points.append(
+                "최근 1개월 기준 약세가 넓어졌지만, 3개월 기준 중기 약세 확산은 아직 제한적입니다."
+            )
+
+        if current_3m_negative >= 5 and current_6m_negative < 5:
+            caution_points.append(
+                "3개월 기준 음수 ETF가 늘어나 중기 약세 확산을 경계해야 합니다."
+            )
+            next_watch_points.append("3M 음수 ETF 개수가 5개 이상에서 2~4주 유지되는지 확인")
+
+        if current_3m_negative >= 7 and current_6m_negative >= 5:
+            caution_points.append(
+                "3개월과 6개월 기준 음수 ETF가 동시에 높아 계단식 하락 확산 가능성이 커졌습니다."
+            )
+
+    # 6. 금리 해석
+    if not pd.isna(dgs10):
+        if dgs10 >= 5.0:
+            caution_points.append(
+                f"미국 10년물 금리가 {dgs10:.2f}%로 5%를 넘어 위험자산 할인율 부담이 매우 커졌습니다."
+            )
+        elif dgs10 >= 4.7:
+            caution_points.append(
+                f"미국 10년물 금리가 {dgs10:.2f}%로 5% 심리선에 접근하고 있습니다."
+            )
+        else:
+            interpretation_points.append(
+                f"미국 10년물 금리는 {dgs10:.2f}%로 5% 위험선 아래에 있습니다."
+            )
+
+    if not pd.isna(dfii10):
+        if dfii10 >= 2.0:
+            caution_points.append(
+                f"미국 10년 실질금리가 {dfii10:.2f}%로 성장주 밸류에이션에 부담을 줄 수 있습니다."
+            )
+            next_watch_points.append("실질금리가 2% 이상에서 고착되는지 확인")
+        else:
+            interpretation_points.append(
+                f"미국 10년 실질금리는 {dfii10:.2f}%로 2% 기준선 아래에 있습니다."
+            )
+
+    # 7. 기대인플레이션 해석
+    if not pd.isna(t10yie_3m):
+        if t10yie_3m > 0.25:
+            caution_points.append(
+                "10년 기대인플레이션이 3개월 기준 상승해 금리인하 기대가 약해질 수 있습니다."
+            )
+        else:
+            interpretation_points.append(
+                "10년 기대인플레이션은 최근 3개월 기준 급등 신호가 강하지 않습니다."
+            )
+
+    # 8. 신용시장 해석
+    if not pd.isna(hy_oas_1m):
+        if hy_oas_1m > 0.30:
+            caution_points.append(
+                "하이일드 스프레드가 1개월 기준 크게 확대되어 자본 공급자 위험회피 신호가 나타납니다."
+            )
+            next_watch_points.append("하이일드 OAS와 BBB OAS가 동시에 확대되는지 확인")
+        else:
+            interpretation_points.append(
+                "하이일드 스프레드는 아직 급격한 확대 신호가 강하지 않습니다."
+            )
+
+    if not pd.isna(bbb_oas_1m):
+        if bbb_oas_1m > 0.15:
+            caution_points.append(
+                "BBB 회사채 스프레드가 확대되어 우량 하단 기업의 조달 부담을 확인해야 합니다."
+            )
+        else:
+            interpretation_points.append(
+                "BBB 회사채 스프레드는 아직 안정적인 편입니다."
+            )
+
+    if not pd.isna(nfci):
+        if nfci > 0:
+            caution_points.append(
+                f"NFCI가 {nfci:.2f}로 0을 넘어 금융환경이 평균보다 타이트합니다."
+            )
+        else:
+            interpretation_points.append(
+                f"NFCI는 {nfci:.2f}로 0보다 낮아 금융환경은 아직 평균보다 완화적입니다."
+            )
+
+    # 9. 기본 다음 체크포인트
+    if len(next_watch_points) == 0:
+        next_watch_points = [
+            "3M 음수 ETF 개수가 증가하는지 확인",
+            "SOXX/SPY와 QQQ/SPY가 둔화되는지 확인",
+            "하이일드 OAS와 BBB OAS가 확대되는지 확인",
+            "미국 10년물 금리가 4.7~5.0% 구간으로 재상승하는지 확인"
+        ]
+
+    return headline, summary, interpretation_points, caution_points, next_watch_points
+
+
+market_headline, market_summary, interpretation_points, caution_points, next_watch_points = make_market_interpretation()
+
+st.markdown("## 현재 시장 해석")
+
+col_a, col_b, col_c = st.columns(3)
+
+col_a.metric("현재 판정", market_headline)
+col_b.metric("종합 위험 점수", f"{total_score}/100")
+
+if current_3m_negative is not None:
+    col_c.metric("3M 음수 ETF", f"{current_3m_negative}개")
+else:
+    col_c.metric("3M 음수 ETF", "N/A")
+
+st.info(market_summary)
+
+with st.expander("상세 해석 보기", expanded=True):
+    st.markdown("### 긍정 또는 중립 신호")
+    if len(interpretation_points) > 0:
+        for point in interpretation_points:
+            st.markdown(f"- {point}")
+    else:
+        st.markdown("- 현재 뚜렷한 긍정 또는 중립 신호가 감지되지 않았습니다.")
+
+    st.markdown("### 주의 신호")
+    if len(caution_points) > 0:
+        for point in caution_points:
+            st.markdown(f"- {point}")
+    else:
+        st.markdown("- 현재 강한 주의 신호는 제한적입니다.")
+
+    st.markdown("### 다음 체크포인트")
+    for point in next_watch_points:
+        st.markdown(f"- {point}")
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "① 종합 경고",
